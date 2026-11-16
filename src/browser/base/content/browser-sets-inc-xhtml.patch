@@ -13,6 +13,9 @@ index 9190c6e7f871b078c8bce86a998f81a8b27589de..2fd01ca9c75d675649ccbd750aacb2bd
      <key id="printKb" data-l10n-id="print-shortcut" command="cmd_print"  modifiers="accel"/>
      <key id="key_close" data-l10n-id="close-shortcut" command="cmd_close" modifiers="accel" reserved="true"/>
      <key id="key_closeWindow" data-l10n-id="close-shortcut" command="cmd_closeWindow" modifiers="accel,shift" reserved="true"/>
+-    <key id="key_privatebrowsing" command="Tools:PrivateBrowsing" data-l10n-id="private-browsing-shortcut"
++    <key id="key_privatebrowsing" command="Tools:PrivateBrowsing" key="N"
++         modifiers="accel,shift" reserved="true"/>
 @@ -285,9 +285,7 @@
      <key id="key_findPrevious2" data-l10n-id="search-find-again-shortcut-alt" command="cmd_findPrevious" modifiers="shift"/>
  
