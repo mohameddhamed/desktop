@@ -605,6 +605,10 @@ class nsZenUIManager {
     this.#urlbar.enableCommandsMode(event);
   }
 
+  openCommandPalette(event) {
+    this.#urlbar.openCommandPalette(event);
+  }
+
   getOpenUILinkWhere(url, browser, openUILinkWhere) {
     return this.#urlbar.getOpenUILinkWhere(url, browser, openUILinkWhere);
   }

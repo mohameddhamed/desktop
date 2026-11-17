@@ -51,10 +51,11 @@ index 47a65042c26ead0b2715c0b11699be2e242f6bd0..b194fc9c798e44cfc35f289d0e39411f
      ]);
    },
  
-@@ -482,6 +496,7 @@ export const UrlbarShared = {
-     if (UrlbarPrefs.get("scotchBonnet.enableOverride")) {
-       keys.push(this.RESTRICT_TOKENS.ACTION);
-     }
+@@ -482,6 +496,8 @@ export const UrlbarShared = {
+-    if (UrlbarPrefs.get("scotchBonnet.enableOverride")) {
+-      keys.push(this.RESTRICT_TOKENS.ACTION);
+-    }
++    keys.push(this.RESTRICT_TOKENS.ACTION);
 +    keys.push(this.RESTRICT_TOKENS.WORKSPACE);
      return new Set(keys);
    },

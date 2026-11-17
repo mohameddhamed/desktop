@@ -3,7 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import {
+  UrlbarProvider,
+  UrlbarUtils,
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs";
 import {
   globalActions,
@@ -159,11 +162,25 @@ export class ZenUrlbarProviderGlobalActions extends UrlbarProvider {
    * @param {UrlbarQueryContext} queryContext The query context object
    */
   async isActive(queryContext) {
-    return (
-      queryContext.searchMode?.source ==
-        UrlbarShared.RESULT_SOURCE.WORKSPACES ||
+    const isZenActions =
       queryContext.searchMode?.source ==
         UrlbarShared.RESULT_SOURCE.ZEN_ACTIONS ||
+      queryContext.sources?.includes(UrlbarShared.RESULT_SOURCE.ZEN_ACTIONS) ||
+      queryContext.restrictSource == UrlbarShared.RESULT_SOURCE.ZEN_ACTIONS ||
+      queryContext.tokens?.some(
+        t => t.type === UrlbarShared.TOKEN_TYPE.RESTRICT_ACTION
+      );
+
+    const isCommandPaletteEmpty =
+      lazy.BrowserWindowTracker.getTopWindow()?.gURLBar?.hasAttribute(
+        "zen-command-palette"
+      ) && !queryContext.searchString;
+
+    return (
+      isZenActions ||
+      isCommandPaletteEmpty ||
+      queryContext.searchMode?.source ==
+        UrlbarShared.RESULT_SOURCE.WORKSPACES ||
       (lazy.enabledPref &&
         queryContext.searchString &&
         queryContext.searchString.length < UrlbarShared.MAX_TEXT_LENGTH &&
@@ -350,12 +367,84 @@ export class ZenUrlbarProviderGlobalActions extends UrlbarProvider {
   }
 
   async startQuery(queryContext, addCallback) {
-    const query = queryContext.trimmedLowerCaseSearchString;
     const isWorkspaceSearch =
       queryContext.searchMode?.source == UrlbarShared.RESULT_SOURCE.WORKSPACES;
+    const isActionsRestrict =
+      queryContext.restrictSource == UrlbarShared.RESULT_SOURCE.ZEN_ACTIONS ||
+      queryContext.tokens?.some(
+        t => t.type === UrlbarShared.TOKEN_TYPE.RESTRICT_ACTION
+      ) ||
+      queryContext.searchString.trim().startsWith(
+        UrlbarShared.RESTRICT_TOKENS.ACTION
+      );
+
     const isPrefixed =
       isWorkspaceSearch ||
-      queryContext.searchMode?.source == UrlbarShared.RESULT_SOURCE.ZEN_ACTIONS;
+      queryContext.searchMode?.source ==
+        UrlbarShared.RESULT_SOURCE.ZEN_ACTIONS ||
+      isActionsRestrict;
+
+    const window = lazy.BrowserWindowTracker.getTopWindow();
+    const isCommandPaletteEmpty =
+      window?.gURLBar?.hasAttribute("zen-command-palette") &&
+      !queryContext.searchString;
+
+    // Fallback: If input is emptied in Command Palette mode, present MRU open tabs
+    if (isCommandPaletteEmpty) {
+      const tabs = [...(window?.gBrowser?.tabs || [])]
+        .filter(tab => !tab.closing && !tab.hasAttribute("zen-empty-tab"))
+        .sort((a, b) => {
+          let dt = (b.lastSeenActive || 0) - (a.lastSeenActive || 0);
+          if (dt) {
+            return dt;
+          }
+          return a.selected ? -1 : 1;
+        });
+
+      let added = 0;
+      for (const tab of tabs) {
+        const url = tab.linkedBrowser?.currentURI?.spec || "";
+        const title = tab.label || url;
+        const icon = tab.image || UrlbarShared.getIconForUrl(url);
+
+        addCallback(
+          this,
+          new lazy.UrlbarResult({
+            type: UrlbarShared.RESULT_TYPE.TAB_SWITCH,
+            source: UrlbarShared.RESULT_SOURCE.TABS,
+            payload: {
+              url,
+              title,
+              icon,
+              userContext: UrlbarUtils.getUserContextData(
+                tab.userContextId || 0
+              ),
+              tabGroup: tab.group?.id || null,
+              tab,
+            },
+            highlights: {
+              title: [],
+              url: [],
+            },
+          })
+        );
+        if (++added >= queryContext.maxResults) {
+          break;
+        }
+      }
+      return;
+    }
+
+    // Clean restriction token so fuzzy matching receives pure user keywords:
+    let query = queryContext.trimmedLowerCaseSearchString;
+    if (
+      isActionsRestrict &&
+      query.startsWith(UrlbarShared.RESTRICT_TOKENS.ACTION)
+    ) {
+      query = query
+        .substring(UrlbarShared.RESTRICT_TOKENS.ACTION.length)
+        .trimStart();
+    }
 
     if (!query && !isPrefixed) {
       return;

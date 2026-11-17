@@ -20,13 +20,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   true
 );
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "littleWindowEnabled",
-  "zen.little-window.enabled",
-  false
-);
-
 ChromeUtils.defineLazyGetter(lazy, "l10n", () => {
   return new Localization(["browser/zen-command-palette.ftl"], true);
 });
@@ -43,7 +36,7 @@ function isNotEmptyTab(window) {
 const globalActionsTemplate = [
   {
     l10nId: "zen-action-toggle-compact-mode",
-    command: "cmd_toggleCompactModeIgnoreHover",
+    command: "cmd_zenCompactModeToggle",
     icon: "chrome://browser/skin/zen-icons/sidebar.svg",
   },
   {
@@ -62,6 +55,21 @@ const globalActionsTemplate = [
   {
     l10nId: "zen-action-new-split-view",
     command: "cmd_zenNewEmptySplit",
+    icon: "chrome://browser/skin/zen-icons/split.svg",
+  },
+  {
+    l10nId: "zen-action-split-view-grid",
+    command: "cmd_zenSplitViewGrid",
+    icon: "chrome://browser/skin/zen-icons/split.svg",
+  },
+  {
+    l10nId: "zen-action-split-view-vertical",
+    command: "cmd_zenSplitViewVertical",
+    icon: "chrome://browser/skin/zen-icons/split.svg",
+  },
+  {
+    l10nId: "zen-action-split-view-horizontal",
+    command: "cmd_zenSplitViewHorizontal",
     icon: "chrome://browser/skin/zen-icons/split.svg",
   },
   {
@@ -108,6 +116,11 @@ const globalActionsTemplate = [
     icon: "chrome://browser/skin/zen-icons/link.svg",
   },
   {
+    l10nId: "zen-action-copy-current-url-markdown",
+    command: "cmd_zenCopyCurrentURLMarkdown",
+    icon: "chrome://browser/skin/zen-icons/link.svg",
+  },
+  {
     l10nId: "zen-action-settings",
     command: window => window.openPreferences(),
     icon: "chrome://browser/skin/zen-icons/settings.svg",
@@ -126,12 +139,6 @@ const globalActionsTemplate = [
     l10nId: "zen-action-new-blank-window",
     command: "cmd_zenNewNavigatorUnsynced",
     icon: "chrome://browser/skin/zen-icons/window.svg",
-  },
-  {
-    l10nId: "zen-action-new-little-window",
-    command: "cmd_zenNewLittleWindow",
-    icon: "chrome://browser/skin/zen-icons/window.svg",
-    isAvailable: () => lazy.littleWindowEnabled,
   },
   {
     l10nId: "zen-action-pin-tab",
@@ -222,6 +229,36 @@ const globalActionsTemplate = [
     icon: "chrome://browser/skin/zen-icons/close.svg",
     isAvailable: window => {
       return isNotEmptyTab(window);
+    },
+  },
+  {
+    l10nId: "zen-action-close-unpinned-tabs",
+    command: "cmd_zenCloseUnpinnedTabs",
+    icon: "chrome://browser/skin/zen-icons/close.svg",
+  },
+  {
+    l10nId: "zen-action-unload-other-workspaces",
+    command: "cmd_zenUnloadAllOtherWorkspace",
+    icon: "chrome://browser/skin/zen-icons/window.svg",
+    isAvailable: window => {
+      return window.gZenWorkspaces._workspaceCache.length > 1;
+    },
+  },
+  {
+    l10nId: "zen-action-discard-inactive-tabs",
+    command: window => {
+      const tabs = [...window.gBrowser.tabs].filter(
+        tab => !tab.selected && !tab.pinned && !tab.discarded && !tab.closing
+      );
+      if (tabs.length) {
+        window.gBrowser.explicitUnloadTabs(tabs);
+      }
+    },
+    icon: "chrome://browser/skin/zen-icons/clean.svg",
+    isAvailable: window => {
+      return [...window.gBrowser.tabs].some(
+        tab => !tab.selected && !tab.pinned && !tab.discarded && !tab.closing
+      );
     },
   },
   {
@@ -350,6 +387,66 @@ const globalActionsTemplate = [
       return isNotEmptyTab(window);
     },
   },
+  {
+    l10nId: "zen-action-toggle-devtools",
+    command: window => {
+      try {
+        const { gDevToolsBrowser } = ChromeUtils.importESModule(
+          "resource://devtools/client/framework/devtools-browser.js"
+        );
+        gDevToolsBrowser.toggleToolboxCommand(window.gBrowser, ChromeUtils.now());
+      } catch (e) {
+        const { gDevTools } = ChromeUtils.importESModule(
+          "resource://devtools/client/framework/gDevTools.sys.mjs"
+        );
+        const tab = window.gBrowser.selectedTab;
+        const toolbox = gDevTools.getToolboxForTab(tab);
+        if (toolbox) {
+          gDevTools.closeToolboxForTab(tab);
+        } else {
+          gDevTools.showToolboxForTab(tab);
+        }
+      }
+    },
+    icon: "chrome://browser/skin/zen-icons/settings.svg",
+    isAvailable: window => isNotEmptyTab(window),
+  },
+  {
+    l10nId: "zen-action-inspect-element",
+    command: async window => {
+      try {
+        const { gDevTools } = ChromeUtils.importESModule(
+          "resource://devtools/client/framework/gDevTools.sys.mjs"
+        );
+        const tab = window.gBrowser.selectedTab;
+        const toolbox = await gDevTools.showToolboxForTab(tab, {
+          toolId: "inspector",
+        });
+        toolbox?.getPanel("inspector")?.startInspecting?.();
+      } catch (e) {
+        console.error("Error inspecting element:", e);
+      }
+    },
+    icon: "chrome://browser/skin/zen-icons/search-page.svg",
+    isAvailable: window => isNotEmptyTab(window),
+  },
+  {
+    l10nId: "zen-action-responsive-design-mode",
+    command: window => {
+      try {
+        const { ResponsiveUIManager } = ChromeUtils.importESModule(
+          "resource://devtools/client/responsive/manager.js"
+        );
+        ResponsiveUIManager.toggle(window, window.gBrowser.selectedTab, {
+          trigger: "zen-command-palette",
+        });
+      } catch (e) {
+        console.error("Error toggling responsive design mode:", e);
+      }
+    },
+    icon: "chrome://browser/skin/zen-icons/window.svg",
+    isAvailable: window => isNotEmptyTab(window),
+  },
 ];
 
 export function formatValueSync(l10nId) {
@@ -360,6 +457,19 @@ const labels = new Map();
 
 Services.obs.addObserver(() => labels.clear(), "intl:app-locales-changed");
 
+const FALLBACK_LABELS = {
+  "zen-action-split-view-grid": "Split View Grid",
+  "zen-action-split-view-vertical": "Split View Vertical",
+  "zen-action-split-view-horizontal": "Split View Horizontal",
+  "zen-action-copy-current-url-markdown": "Copy Current URL as Markdown",
+  "zen-action-close-unpinned-tabs": "Close All Unpinned Tabs",
+  "zen-action-unload-other-workspaces": "Unload Other Workspaces",
+  "zen-action-discard-inactive-tabs": "Discard Inactive Tabs",
+  "zen-action-toggle-devtools": "Toggle Developer Tools",
+  "zen-action-inspect-element": "Inspect Element",
+  "zen-action-responsive-design-mode": "Toggle Responsive Design Mode",
+};
+
 /**
  * @param {string} l10nId - The message holding an action's text
  * @returns {string} What it says, in the language in use
@@ -368,11 +478,14 @@ export function labelFor(l10nId) {
   let label = labels.get(l10nId);
   if (label === undefined) {
     label = formatValueSync(l10nId);
+    if (!label) {
+      label = FALLBACK_LABELS[l10nId];
+    }
     if (label) {
       labels.set(l10nId, label);
     }
   }
-  return label;
+  return label || l10nId;
 }
 
 export const globalActions = globalActionsTemplate.map(action => ({

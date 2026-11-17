@@ -15,7 +15,6 @@ export class nsZenUrlbarController {
   #lastSearch = "";
   #clearTimeout = null;
   #lastTab = null;
-  #openedOnTab = null;
   #sessionCounter = 0;
   #owner = null;
 
@@ -53,6 +52,34 @@ export class nsZenUrlbarController {
     window.addEventListener("Zen:UrlbarSearchModeChanged", event =>
       this.#onSearchModeChanged(event)
     );
+
+    // Prevent URL bar popup from closing when backspacing to empty input in Command Palette mode
+    const origViewClose = gURLBar.view.close.bind(gURLBar.view);
+    gURLBar.view.close = (options = {}) => {
+      if (
+        gURLBar.hasAttribute("zen-command-palette") &&
+        !gURLBar.value &&
+        !options?.elementPicked &&
+        !options?.closingExplicitly
+      ) {
+        return;
+      }
+      return origViewClose(options);
+    };
+
+    // Wire MRU open tabs fallback when prompt is backspaced past '>' to empty input
+    gURLBar.addEventListener("input", event => {
+      if (
+        gURLBar.hasAttribute("zen-command-palette") &&
+        gURLBar.value === ""
+      ) {
+        gURLBar.startQuery({
+          searchString: "",
+          allowAutofill: false,
+          event,
+        });
+      }
+    });
   }
 
   get #newtabButtons() {
@@ -184,19 +211,6 @@ export class nsZenUrlbarController {
   }
 
   /**
-   * Puts the URL bar back to showing the selected tab, dropping what was
-   * typed into it.
-   */
-  revert() {
-    const isLoadingAnotherTab =
-      this.#openedOnTab?.deref() !== gBrowser.selectedTab &&
-      !!gBrowser.selectedBrowser.userTypedValue;
-    if (!isLoadingAnotherTab) {
-      gURLBar.handleRevert();
-    }
-  }
-
-  /**
    * Closes the URL bar session started by handleNewTab and restores the tab
    * and URL bar state it replaced.
    *
@@ -216,6 +230,7 @@ export class nsZenUrlbarController {
       if (this.isOwner(closeSeq)) {
         // We use this attribute on Tabbrowser::addTab
         gURLBar.removeAttribute("zen-newtab");
+        gURLBar.removeAttribute("zen-command-palette");
 
         const lastTab = this.#lastTab;
         if (
@@ -254,7 +269,7 @@ export class nsZenUrlbarController {
           });
         }
 
-        this.revert();
+        gURLBar.handleRevert();
       }
 
       if (isFocusedBefore) {
@@ -301,7 +316,6 @@ export class nsZenUrlbarController {
   // Section: open and close
 
   onUrlbarOpen() {
-    this.#openedOnTab = new WeakRef(gBrowser.selectedTab);
     setTimeout(() => {
       const hadValid = gURLBar.getAttribute("pageproxystate") === "valid";
       gURLBar.setPageProxyState("invalid", false);
@@ -310,6 +324,7 @@ export class nsZenUrlbarController {
   }
 
   onUrlbarClose() {
+    gURLBar.removeAttribute("zen-command-palette");
     if (gURLBar.getAttribute("had-proxystate") == "true") {
       gURLBar.setPageProxyState("valid", false);
     }
@@ -373,6 +388,35 @@ export class nsZenUrlbarController {
     });
   }
 
+  /**
+   * Opens the native VS Code-style Command Palette pre-filled with '>'.
+   *
+   * @param {Event} [event] - The keyboard or UI event that triggered the command.
+   */
+  openCommandPalette(event) {
+    event?.preventDefault();
+
+    // Expand URL bar modal if currently closed
+    if (!gURLBar.hasAttribute("breakout-extend")) {
+      this.handleNewTab(false, false, "tab", true);
+    }
+
+    gURLBar.setAttribute("zen-command-palette", "true");
+
+    // Set initial '>' character and position caret without full-selection wipe
+    window.setTimeout(() => {
+      gURLBar.value = UrlbarShared.RESTRICT_TOKENS.ACTION;
+      gURLBar.setSelectionRange(1, 1);
+      gURLBar.setPageProxyState("invalid", false);
+
+      gURLBar.startQuery({
+        searchString: UrlbarShared.RESTRICT_TOKENS.ACTION,
+        allowAutofill: false,
+        event,
+      });
+    }, 0);
+  }
+
   // Section: URL display and link handling
 
   /**
@@ -386,10 +430,7 @@ export class nsZenUrlbarController {
     if (gURLBar.hasAttribute("breakout-extend")) {
       return aURL;
     }
-    if (
-      (gZenVerticalTabsManager._hasSetSingleToolbar && this.showDomainOnly) ||
-      gZenVerticalTabsManager.isLittleWindow
-    ) {
+    if (gZenVerticalTabsManager._hasSetSingleToolbar && this.showDomainOnly) {
       let url = BrowserUIUtils.removeSingleTrailingSlashFromURL(aURL);
       let stripped = url.startsWith("https://") ? url.split("/")[2] : url;
       if (stripped.startsWith("www.")) {

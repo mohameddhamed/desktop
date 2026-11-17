@@ -128,6 +128,7 @@
       }
     },
     cmd_zenToggleLibrary: () => lazy.ZenLibrary.toggle(),
+    cmd_zenOpenCommandPalette: event => gZenUIManager.openCommandPalette(event),
   };
 
   function handleZenCommand(event) {
